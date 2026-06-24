@@ -107,6 +107,66 @@ def car_transcript_to_steps(transcript_path: str | Path) -> list[dict[str, Any]]
     return steps
 
 
+_SUBAGENT_EVENTS = ("subagent_start", "subagent_turn", "subagent_observation", "subagent_end")
+
+
+def car_transcript_to_subagents(transcript_path: str | Path) -> list[dict[str, Any]]:
+    """Group `subagent_*` events by delegate_id into nested-trajectory dicts.
+
+    Each group: {delegate_id, kind, goal, steps:[stepdict], summary, sub_turns,
+    error?}. `steps` use the same stepdict shape as :func:`car_transcript_to_steps`
+    (agent / environment). The ALE binding turns each into a nested Trajectory on
+    the main trajectory's `subagent_trajectories`.
+    """
+    groups: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for rec in _iter_records(transcript_path):
+        t = rec.get("type")
+        if t not in _SUBAGENT_EVENTS:
+            continue
+        did = rec.get("delegate_id", "")
+        g = groups.get(did)
+        if g is None:
+            g = {"delegate_id": did, "kind": rec.get("kind", "gui"), "goal": "",
+                 "steps": [], "summary": "", "sub_turns": 0}
+            groups[did] = g
+            order.append(did)
+        if t == "subagent_start":
+            g["goal"] = rec.get("goal", "")
+            g["kind"] = rec.get("kind", g["kind"])
+        elif t == "subagent_turn":
+            usage = rec.get("usage") or {}
+            calls = [
+                {"id": c.get("id") or f"call_{len(g['steps'])}",
+                 "name": c.get("name", ""), "arguments": c.get("arguments") or {}}
+                for c in (rec.get("tool_calls") or [])
+            ]
+            g["steps"].append({
+                "source": "agent", "message": rec.get("text") or None, "reasoning": None,
+                "tool_calls": calls, "observation": None,
+                "metrics": {"input_tokens": int(usage.get("input_tokens", 0) or 0),
+                            "output_tokens": int(usage.get("output_tokens", 0) or 0)},
+                "extra": {},
+            })
+        elif t == "subagent_observation":
+            results = [
+                {"tool_call_id": r.get("tool_call_id", ""), "content": r.get("content", ""),
+                 "is_error": bool(r.get("is_error", False))}
+                for r in (rec.get("results") or [])
+            ]
+            g["steps"].append({
+                "source": "environment", "message": None, "reasoning": None,
+                "tool_calls": [], "observation": {"results": results, "error": None},
+                "metrics": None, "extra": {},
+            })
+        elif t == "subagent_end":
+            g["summary"] = rec.get("summary", "")
+            g["sub_turns"] = int(rec.get("sub_turns", 0) or 0)
+            if rec.get("error"):
+                g["error"] = rec["error"]
+    return [groups[d] for d in order]
+
+
 def read_run_end(transcript_path: str | Path) -> dict[str, Any] | None:
     """Return the terminal run_end record (status/failure_class/...), or None."""
     run_end = None
@@ -121,8 +181,52 @@ def find_transcript(work_dir: Path) -> Path:
     return work_dir / "transcript.jsonl"
 
 
+def _add_stepdict(builder: Any, sd: dict[str, Any], types: dict[str, Any]) -> None:
+    """Append one normalized stepdict to a TrajectoryBuilder (shared by the main
+    trajectory and each nested sub-agent trajectory)."""
+    ToolCall = types["ToolCall"]
+    Observation = types["Observation"]
+    ToolResult = types["ToolResult"]
+    ContentPart = types["ContentPart"]
+    StepMetrics = types["StepMetrics"]
+
+    tool_calls = [
+        ToolCall(id=c["id"], name=c["name"], arguments=c["arguments"])
+        for c in sd["tool_calls"]
+    ]
+    observation = None
+    if sd["observation"] is not None:
+        observation = Observation(
+            results=[
+                ToolResult(
+                    tool_call_id=r["tool_call_id"],
+                    content=[ContentPart(type="text", text=str(r["content"]))],
+                    is_error=r["is_error"],
+                )
+                for r in sd["observation"]["results"]
+            ],
+            error=sd["observation"]["error"],
+        )
+    metrics = None
+    if sd["metrics"] is not None:
+        metrics = StepMetrics(
+            input_tokens=sd["metrics"]["input_tokens"],
+            output_tokens=sd["metrics"]["output_tokens"],
+        )
+    builder.add_step(
+        sd["source"],
+        message=sd["message"],
+        reasoning=sd["reasoning"],
+        tool_calls=tool_calls,
+        observation=observation,
+        metrics=metrics,
+        extra=sd["extra"],
+    )
+
+
 def parse_car_transcript_into(work_dir: Path, builder: Any) -> None:
-    """ALE binding: append CAR transcript steps to a TrajectoryBuilder.
+    """ALE binding: append CAR transcript steps to a TrajectoryBuilder, plus a
+    nested Trajectory per `delegate_gui` sub-agent.
 
     Imports ale_run lazily so this module imports fine without the framework.
     """
@@ -132,42 +236,34 @@ def parse_car_transcript_into(work_dir: Path, builder: Any) -> None:
         StepMetrics,
         ToolCall,
         ToolResult,
+        TrajectoryBuilder,
     )
+
+    types = {
+        "ToolCall": ToolCall, "Observation": Observation, "ToolResult": ToolResult,
+        "ContentPart": ContentPart, "StepMetrics": StepMetrics,
+    }
 
     transcript = find_transcript(work_dir)
     for sd in car_transcript_to_steps(transcript):
-        tool_calls = [
-            ToolCall(id=c["id"], name=c["name"], arguments=c["arguments"])
-            for c in sd["tool_calls"]
-        ]
-        observation = None
-        if sd["observation"] is not None:
-            observation = Observation(
-                results=[
-                    ToolResult(
-                        tool_call_id=r["tool_call_id"],
-                        content=[ContentPart(type="text", text=str(r["content"]))],
-                        is_error=r["is_error"],
-                    )
-                    for r in sd["observation"]["results"]
-                ],
-                error=sd["observation"]["error"],
-            )
-        metrics = None
-        if sd["metrics"] is not None:
-            metrics = StepMetrics(
-                input_tokens=sd["metrics"]["input_tokens"],
-                output_tokens=sd["metrics"]["output_tokens"],
-            )
-        builder.add_step(
-            sd["source"],
-            message=sd["message"],
-            reasoning=sd["reasoning"],
-            tool_calls=tool_calls,
-            observation=observation,
-            metrics=metrics,
-            extra=sd["extra"],
+        _add_stepdict(builder, sd, types)
+
+    # Nested sub-agent (delegate_gui) trajectories → trajectory.subagent_trajectories
+    # (ATIF models these natively). Reuse the main trajectory's agent/task identity.
+    main = builder.trajectory
+    for sa in car_transcript_to_subagents(transcript):
+        sub = TrajectoryBuilder(
+            agent_name=f"{main.agent.name}:{sa['kind']}",
+            agent_version=main.agent.version,
+            model=main.agent.model,
+            task_path=main.task_path,
+            variant_index=main.variant_index,
+            instruction=sa["goal"],
         )
+        for sd in sa["steps"]:
+            _add_stepdict(sub, sd, types)
+        status = "failed" if sa.get("error") else "completed"
+        main.subagent_trajectories.append(sub.finalize(reward=None, status=status))
 
     run_end = read_run_end(find_transcript(work_dir))
     if run_end is not None:

@@ -133,6 +133,8 @@ class CarDeployer(BaseAgentDeployer):
         env = dict(os.environ)
         if cfg.prompt_mode:
             env["CAR_RUNTASK_PROMPT"] = cfg.prompt_mode
+        if cfg.enable_gui and cfg.enable_gui_subagent:
+            env["CAR_RUNTASK_GUI_SUBAGENT"] = "1"
 
         # 3. Drive. The episode wall budget is orchestration-owned (the executor
         #    wraps launch() in asyncio.wait_for); a cancellation kills the child.

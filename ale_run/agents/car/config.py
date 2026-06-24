@@ -87,6 +87,12 @@ class CarConfig:
     """Wire the ``cua_mcp_server`` (GUI) bridge as a ``cua`` connector so the
     model gets ``mcp_cua_*`` tools. Disable for shell/files-only tasks."""
 
+    enable_gui_subagent: bool = True
+    """Route GUI through a ``delegate_gui`` sub-agent (sets
+    ``CAR_RUNTASK_GUI_SUBAGENT``) instead of exposing ``mcp_cua_*`` to the main
+    model — keeps screenshots out of the main context (parity with ale_claw's
+    ``delegate_gui``). Only takes effect when :attr:`enable_gui` is also true."""
+
     resume: bool = False
     """Pass ``car run-task --resume`` so a re-run continues from the per-turn
     checkpoint (Phase 0.5). Default off; the framework owns retries."""
