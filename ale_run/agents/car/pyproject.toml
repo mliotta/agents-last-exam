@@ -1,0 +1,21 @@
+[project]
+name = "ale-car"
+version = "0.1.0"
+description = "Common Agent Runtime (CAR) out-of-sandbox harness for ALE."
+requires-python = ">=3.12,<3.14"
+# CAR's agent loop, execution substrate, resume, and inference all live in the
+# `car run-task` binary (shelled out from the deployer), so the Python adapter
+# needs no third-party deps — only the parent `ale_run` package
+# (base_interface + agents._bootstrap) and the stdlib.
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# uv-workspace marker member (mirrors the peer agents); the real code ships with
+# the parent wheel. Package nothing here.
+only-include = []
+sources = {}
+bypass-selection = true
