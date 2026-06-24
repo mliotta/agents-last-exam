@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 _AGENT_FQNS: dict[str, str] = {
     "claude_code": "ale_run.agents.claude_code.deployer.ClaudeCodeDeployer",
     "ale_claw": "ale_run.agents.ale_claw.deployer.AleClawDeployer",
+    "car": "ale_run.agents.car.deployer.CarDeployer",
     "gemini_cli": "ale_run.agents.gemini_cli.deployer.GeminiCliDeployer",
     "grok_cli": "ale_run.agents.grok_cli.deployer.GrokCliDeployer",
     "cursor_cli": "ale_run.agents.cursor_cli.deployer.CursorCliDeployer",

@@ -1,0 +1,37 @@
+# car — Common Agent Runtime as an ALE out-of-sandbox harness.
+# Drives the VM via `car run-task` through the vm_mcp_server (shell/files) +
+# cua_mcp_server (GUI) bridges. CAR is provider-direct (no OpenRouter): the
+# LiteLLM `model:` below is mapped to a CAR --model alias (config.py §7 table).
+# Auth: provider keys in the operator's shell env (ANTHROPIC_API_KEY /
+# OPENAI_API_KEY / GOOGLE_API_KEY|GEMINI_API_KEY).
+#
+# Vendored to the fork as configs/agents/car.yaml. Reference as:
+#   agents: [ configs/agents/car.yaml ]
+
+harness: car
+executor: local
+model: anthropic/claude-opus-4-8
+
+config:
+  # Hard ceiling on the agent loop (car run-task --max-turns).
+  max_turns: 100
+
+  # Prompt variant: base (clean engine baseline) | verify (completion-discipline,
+  # experimental). Sets CAR_RUNTASK_PROMPT.
+  prompt_mode: base
+
+  # Wire the cua (GUI) bridge so the model gets mcp_cua_* tools. Disable for
+  # shell/files-only tasks.
+  enable_gui: true
+
+  # Resume from the per-turn checkpoint on re-run (Phase 0.5). Framework owns retries.
+  resume: false
+
+  # Documentation/parity only — CAR's substrate is always MCP (the vm server).
+  substrate_transport: mcp
+
+  # Optional: pass a CAR id straight to --model, bypassing the LiteLLM map.
+  # car_model_override: null
+
+  # Optional: path to the car binary (else $CAR_BINARY, else `car` on PATH).
+  # car_binary: null
