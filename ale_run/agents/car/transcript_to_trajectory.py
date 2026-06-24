@@ -162,6 +162,7 @@ def car_transcript_to_subagents(transcript_path: str | Path) -> list[dict[str, A
         elif t == "subagent_end":
             g["summary"] = rec.get("summary", "")
             g["sub_turns"] = int(rec.get("sub_turns", 0) or 0)
+            g["is_error"] = bool(rec.get("is_error", False))
             if rec.get("error"):
                 g["error"] = rec["error"]
     return [groups[d] for d in order]
@@ -262,7 +263,9 @@ def parse_car_transcript_into(work_dir: Path, builder: Any) -> None:
         )
         for sd in sa["steps"]:
             _add_stepdict(sub, sd, types)
-        status = "failed" if sa.get("error") else "completed"
+        # A sub-agent that errored or hit its turn cap (is_error) is a failed
+        # delegation, even though the parent run may still complete.
+        status = "failed" if (sa.get("error") or sa.get("is_error")) else "completed"
         main.subagent_trajectories.append(sub.finalize(reward=None, status=status))
 
     run_end = read_run_end(find_transcript(work_dir))
