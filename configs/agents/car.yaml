@@ -24,6 +24,11 @@ config:
   # shell/files-only tasks.
   enable_gui: true
 
+  # Route GUI through a delegate_gui sub-agent (CAR_RUNTASK_GUI_SUBAGENT) instead
+  # of exposing mcp_cua_* to the main model — keeps screenshots out of the main
+  # context (parity with ale_claw delegate_gui). Effective only when enable_gui.
+  enable_gui_subagent: true
+
   # Resume from the per-turn checkpoint on re-run (Phase 0.5). Framework owns retries.
   resume: false
 
